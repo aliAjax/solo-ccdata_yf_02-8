@@ -523,7 +523,7 @@
   };
 
   var WORKER_SRC = $('worker-src').textContent;
-  var timer = null, worker = null, runId = 0;
+  var timer = null, worker = null, runId = 0, everComputed = false;
 
   function esc(s){
     return String(s).replace(/[&<>"]/g, function(c){
@@ -573,8 +573,22 @@
       match: Number(refs.match.value), mismatch: Number(refs.mismatch.value),
       gapOpen: Number(refs.gapOpen.value), gapExt: Number(refs.gapExt.value)
     };
-    if(!refs.input.value.trim() || !refs.smp.value.trim()){
-      refs.results.innerHTML = '<div class="placeholder">粘贴参考序列与样本序列后自动开始比对与变异注释。</div>';
+    var refEmpty = !refs.input.value.trim();
+    var smpEmpty = !refs.smp.value.trim();
+    if(refEmpty || smpEmpty){
+      // 仅当两条都为空且从未算出过结果（页面初始状态）时显示中性占位；
+      // 只要此前有过结果、或参考仍在而样本被清空，就必须给出明确错误并清掉旧比对/注释。
+      if(refEmpty && smpEmpty && !everComputed){
+        refs.results.innerHTML = '<div class="placeholder">粘贴参考序列与样本序列后自动开始比对与变异注释。</div>';
+        return;
+      }
+      var msg;
+      if(refEmpty && smpEmpty) msg = '参考序列与样本序列均为空：请粘贴序列，不能只有空白或 FASTA 头部。';
+      else if(refEmpty) msg = '参考序列为空：请粘贴参考序列或 FASTA 文本，不能只有空白。';
+      else msg = '样本序列为空：请粘贴样本序列或 FASTA 文本，不能只有空白。';
+      refs.results.innerHTML = '<div class="placeholder">本次输入无法计算，请按上方提示修正。旧比对与注释已清除。</div>';
+      refs.status.textContent = '';
+      showError(msg);
       return;
     }
     refs.status.innerHTML = '<span class="spin"></span>后台计算中（不阻塞页面）…';
@@ -593,6 +607,7 @@
       refs.status.textContent = '';
       var d = e.data;
       if(!d.ok){ showError(d.error); refs.results.innerHTML='<div class="placeholder">本次输入无法计算，请按上方提示修正。</div>'; return; }
+      everComputed = true;
       var ms = Math.round(performance.now() - t0);
       render(d, ms);
     };
@@ -768,6 +783,7 @@
     refs.input.value=''; refs.smp.value='';
     refs.strand.value='forward';
     refs.match.value=2; refs.mismatch.value=2; refs.gapOpen.value=5; refs.gapExt.value=1;
+    everComputed = false;
     invalidate();
   });
 
