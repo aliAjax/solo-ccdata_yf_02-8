@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>离线核酸序列比对与变异审查台</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#171e2e; --panel2:#1d2638; --line:#2a3550;
+    --text:#dbe4f3; --muted:#8b98b3; --accent:#5aa9ff; --accent2:#36d39a;
+    --red:#ff6b6b; --amber:#ffb454; --purple:#b58dff; --cyan:#5fd4e6;
+    --match:#36d39a; --mismatch:#ff6b6b; --gap:#ffb454;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:"Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.5}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);
+    background:linear-gradient(120deg,#15203a,#101726);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;letter-spacing:.5px}
+  header .offline{color:var(--accent2);font-size:12px;border:1px solid var(--accent2);
+    border-radius:10px;padding:1px 9px}
+  header .sub{color:var(--muted);font-size:12px}
+  main{max-width:1180px;margin:0 auto;padding:18px 20px 60px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 12px;color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  label.fld{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  textarea{width:100%;height:150px;resize:vertical;background:#0c111c;color:var(--text);
+    border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:ui-monospace,Consolas,Menlo,monospace;
+    font-size:12.5px;line-height:1.45;tab-size:4}
+  textarea:focus{outline:none;border-color:var(--accent)}
+  .meta{display:flex;justify-content:space-between;margin-top:4px;font-size:11.5px;color:var(--muted)}
+  .controls{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+  .ctl{display:flex;flex-direction:column;gap:4px}
+  .ctl select,.ctl input{background:#0c111c;color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:6px 8px;font-size:13px;width:110px}
+  .btns{display:flex;gap:10px;margin-left:auto}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--accent);color:#fff}
+  button.primary{background:#1f4d80;border-color:#2f6db0}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px}
+  #errorBox{display:none;background:#3a1a20;border:1px solid #7a2c35;color:#ffc9c9;
+    border-radius:10px;padding:11px 14px;margin-bottom:16px;white-space:pre-wrap}
+  #status{color:var(--muted);font-size:12px;margin-bottom:10px;min-height:18px}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--muted);
+    border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:-1px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .placeholder{color:var(--muted);text-align:center;padding:34px 10px;border:1px dashed var(--line);border-radius:12px}
+  .stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:104px}
+  .stat .k{font-size:11px;color:var(--muted)}
+  .stat .v{font-size:18px;font-weight:600;margin-top:2px}
+  .v.good{color:var(--accent2)} .v.bad{color:var(--red)}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{border:1px solid var(--line);padding:5px 9px;text-align:left}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;position:sticky;top:0}
+  .tbl-wrap{max-height:340px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .mono{font-family:ui-monospace,Consolas,Menlo,monospace}
+  .tag{display:inline-block;border-radius:6px;padding:1px 8px;font-size:11.5px;border:1px solid var(--line);white-space:nowrap}
+  .t-syn{color:var(--accent2);border-color:#1f5d4a;background:#13291f}
+  .t-missense{color:var(--amber);border-color:#6b4d1f;background:#2c2213}
+  .t-nonsense{color:#fff;border-color:#8a2734;background:#5c1620}
+  .t-frameshift{color:#fff;border-color:#7a2fb0;background:#3d1a5c}
+  .t-inframe{color:var(--cyan);border-color:#2a6670;background:#122a2f}
+  .t-partial{color:var(--muted)}
+  pre.aln{background:#0b101b;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    margin:0 0 14px;overflow-x:auto;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:12.5px;line-height:1.6}
+  .aln .ruler{color:var(--muted)}
+  .aln .lbl{color:var(--accent);display:inline-block;width:56px}
+  .m-match{color:var(--match)} .m-mismatch{color:var(--mismatch);background:#3a1a20;border-radius:2px}
+  .m-gap{color:var(--gap)} .m-degen{color:var(--cyan)}
+  .frames{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .frame-badges .tag{margin-right:8px;margin-bottom:4px}
+  details.frame{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px;background:var(--panel2)}
+  details.frame>summary{cursor:pointer;font-weight:600;color:var(--text)}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}
+  .chip{border:1px solid var(--line);border-radius:7px;padding:3px 7px;font-family:ui-monospace,Consolas,Menlo,monospace;
+    font-size:11.5px;background:#0c111c;white-space:nowrap}
+  .chip.syn{border-color:#1f5d4a}
+  .chip.missense{border-color:#6b4d1f}
+  .chip.nonsense{border-color:#8a2734;background:#3a1318}
+  .chip.frameshift{border-color:#7a2fb0;background:#2a1440}
+  .chip.inframe{border-color:#2a6670}
+  .chip.stop{box-shadow:inset 0 0 0 1.5px var(--red)}
+  .chip .aa{color:var(--muted)}
+  .chip .mut{color:var(--red);font-weight:700}
+  .legend{color:var(--muted);font-size:11.5px;margin:6px 0 0}
+  .legend code{color:var(--text)}
+  .sec-note{color:var(--amber);font-size:12px;margin:6px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>核酸序列比对与变异审查台</h1>
+  <span class="offline">● 完全离线运行</span>
+  <span class="sub">全局比对（Gotoh 仿射空位）· 三读框翻译 · 同义 / 错义 / 无义 / 移码注释</span>
+</header>
+<main>
+  <section class="card">
+    <h2>1. 序列输入</h2>
+    <div class="grid2">
+      <div>
+        <label class="fld" for="refInput">参考序列（支持 FASTA / IUPAC 简并碱基，U 按 T 处理）</label>
+        <textarea id="refInput" placeholder="&gt;reference&#10;ATGCCCTTTGGGAAATAA"></textarea>
+        <div class="meta"><span id="refLen">0 nt</span><span>每条上限 20 000 nt</span></div>
+      </div>
+      <div>
+        <label class="fld" for="smpInput">样本序列（支持 FASTA / IUPAC 简并碱基）</label>
+        <textarea id="smpInput" placeholder="&gt;sample&#10;ATGCCCTTTGGGTAATAA"></textarea>
+        <div class="meta"><span id="smpLen">0 nt</span><span>选反向互补时按分析链展示坐标</span></div>
+      </div>
+    </div>
+    <div class="controls" style="margin-top:14px">
+      <div class="ctl">
+        <label class="fld" for="strand">样本链向</label>
+        <select id="strand"><option value="forward">正链（直接比对）</option><option value="rc">反向互补后比对</option></select>
+      </div>
+      <div class="ctl"><label class="fld" for="matchSc">匹配得分</label><input id="matchSc" type="number" value="2" min="0" max="100" step="1"></div>
+      <div class="ctl"><label class="fld" for="mismatchSc">错配罚分</label><input id="mismatchSc" type="number" value="2" min="0" max="100" step="1"></div>
+      <div class="ctl"><label class="fld" for="gapOpen">空位开启罚分</label><input id="gapOpen" type="number" value="5" min="0" max="100" step="1"></div>
+      <div class="ctl"><label class="fld" for="gapExt">空位延伸罚分</label><input id="gapExt" type="number" value="1" min="0" max="100" step="1"></div>
+      <div class="btns">
+        <button id="demoBtn">载入示例</button>
+        <button id="clearBtn">清空</button>
+      </div>
+    </div>
+    <p class="hint">罚分为正数扣分；修改任何序列或参数后，比对与注释会在后台线程全部重算，不残留旧结果。计算在 Web Worker 中进行，超长输入会直接报错而不会卡住页面。</p>
+  </section>
+
+  <div id="errorBox"></div>
+  <div id="status"></div>
+  <div id="results"></div>
+</main>
+
+<!-- ================= 离线 Worker 算法源码（浏览器内联使用；Node 测试抽取 WORKER-START / WORKER-END 之间内容运行） ================= -->
+<script type="text/plain" id="worker-src">
+/* === WORKER-START === */
+(function(){
+  'use strict';
+  var MAX_LEN = 20000;             // 每条序列碱基数上限
+  var MAX_TEXT = 200000;           // 粘贴文本字符上限
+  var MAX_CELLS = 25000000;       // DP 单元数上限（约 38MB trace 缓冲 + 若干行向量，约 5000×5000）
+
+  // IUPAC 简并碱基 → 可能碱基集合；U 与 T 等价
+  var IUPAC = {
+    A:['A'], C:['C'], G:['G'], T:['T'], U:['T'],
+    R:['A','G'], Y:['C','T'], S:['G','C'], W:['A','T'], K:['G','T'], M:['A','C'],
+    B:['C','G','T'], D:['A','G','T'], H:['A','C','T'], V:['A','C','G'],
+    N:['A','C','G','T'], X:['A','C','G','T']
+  };
+  var COMP = {A:'T',T:'A',C:'G',G:'C',U:'A',R:'Y',Y:'R',S:'S',W:'W',K:'M',M:'K',
+              B:'V',V:'B',D:'H',H:'D',N:'N',X:'X'};
+
+  var CODON = (function(){
+    var t={}, bases='TCAG', aa='FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG';
+    var k=0;
+    for(var a=0;a<4;a++)for(var b=0;b<4;b++)for(var c=0;c<4;c++){
+      t[bases[a]+bases[b]+bases[c]] = aa[k++];
+    }
+    return t;
+  })();
+
+  function parseFasta(text, label){
+    if(text == null) throw new Error(label + '：请输入序列。');
+    if(text.length > MAX_TEXT) throw new Error(label + '：文本超长（' + text.length + ' 字符，上限 ' + MAX_TEXT + ' 字符），请缩短后重试。');
+    var trimmed = text.trim();
+    if(!trimmed) throw new Error(label + '为空：请粘贴序列或 FASTA 文本。');
+    var lines = text.split(/\r\n|\n|\r/);
+    var seq = '', headers = 0, basesSeen = false;
+    for(var li=0; li<lines.length; li++){
+      var raw = lines[li], line = raw.trim();
+      if(!line) continue;
+      if(line.charAt(0) === '>'){
+        headers++;
+        if(headers > 1) throw new Error(label + '：检测到多条 FASTA 记录，每个输入框只允许一条序列（第 ' + (li+1) + ' 行出现第二个 “>” FASTA 头）。');
+        continue;
+      }
+      if(line.charAt(0) === ';' && !basesSeen) continue; // FASTA 注释行
+      for(var ci=0; ci<line.length; ci++){
+        var ch = line.charAt(ci);
+        if(ch === ' ' || ch === '\t') continue;
+        var up = ch.toUpperCase();
+        if(!IUPAC[up]){
+          throw new Error(label + '：第 ' + (li+1) + ' 行第 ' + (ci+1) + ' 列含非法字符 “' + ch + '”。\n仅允许 A C G T U 与 IUPAC 简并碱基 R Y S W K M B D H V N（可用 “>” 写 FASTA 头）。');
+        }
+        seq += up;
+      }
+      basesSeen = true;
+    }
+    seq = seq.split('U').join('T');
+    if(!seq) throw new Error(label + '为空：未找到任何碱基（只有 FASTA 头部或空白）。');
+    if(seq.length > MAX_LEN) throw new Error(label + '超长：' + seq.length + ' nt，单条上限 ' + MAX_LEN + ' nt。');
+    return seq;
+  }
+
+  function reverseComplement(s){
+    var out = '';
+    for(var i=s.length-1;i>=0;i--){
+      var c = COMP[s.charAt(i)];
+      if(!c) throw new Error('反向互补失败：出现未知碱基 “' + s.charAt(i) + '”。');
+      out += c;
+    }
+    return out;
+  }
+
+  function compatible(a,b){
+    var A = IUPAC[a], B = IUPAC[b];
+    for(var i=0;i<A.length;i++) if(B.indexOf(A[i]) >= 0) return true;
+    return false;
+  }
+  function isExact(a,b){ return a === b; }
+
+  // Gotoh 仿射空位全局比对（教科书三状态）。ref 为行 i，smp 为列 j。
+  //   M(i,j)：匹配列态，仅由对角前驱（M/E/F）转移，发射一个配对列；
+  //   E(i,j)：样品插入（参考碱基对空位），水平移动；F(i,j)：样品缺失，垂直移动。
+  //   E/F 只能从匹配态开启或同态延伸，杜绝“同格重开空位”的幻影罚分。
+  // trace nibble（每格 3 个）：M 的对角前驱 0=M 1=E 2=F；E/F 前驱 0=由M开启 1=同态延伸
+  function alignGotoh(ref, smp, p){
+    var m = ref.length, n = smp.length;
+    if(m * n > MAX_CELLS){
+      throw new Error('比对规模过大：' + m + ' × ' + n + ' = ' + (m*n) +
+        ' 个 DP 单元（上限 ' + MAX_CELLS + '，约对应 5000×5000）。请缩短序列后重试。');
+    }
+    var NEG = -1e12;
+    var matchR = p.match, misP = p.mismatch, go = p.gapOpen, ge = p.gapExt;
+
+    var mPrev = new Float64Array(n+1), mCur = new Float64Array(n+1);
+    var ePrev = new Float64Array(n+1), eCur = new Float64Array(n+1);
+    var fPrev = new Float64Array(n+1), fCur = new Float64Array(n+1);
+
+    var nibbleCount = 3*m*n;
+    var pack = new Uint8Array(Math.ceil(nibbleCount/2));
+    function setNib(k, v){
+      var b = k >> 1;
+      pack[b] = (k & 1) ? ((pack[b] & 0x0F) | (v << 4)) : ((pack[b] & 0xF0) | v);
+    }
+    function getNib(k){
+      var b = k >> 1;
+      return (k & 1) ? (pack[b] >> 4) : (pack[b] & 0x0F);
+    }
+
+    // i = 0 边界：允许以空位串开始；长度 j 罚 open + (j-1)*ext
+    mPrev[0] = 0; ePrev[0] = NEG; fPrev[0] = NEG;
+    for(var j0=1; j0<=n; j0++){
+      ePrev[j0] = -(go + ge*(j0-1));
+      mPrev[j0] = ePrev[j0];
+      fPrev[j0] = NEG;
+    }
+
+    for(var i=1;i<=m;i++){
+      eCur[0] = NEG;
+      fCur[0] = (i === 1) ? -go : (fPrev[0] - ge);
+      mCur[0] = fCur[0];                     // 允许以空位串开始
+      for(var j=1;j<=n;j++){
+        // 匹配列态：只来自对角前驱
+        var sub = compatible(ref.charAt(i-1), smp.charAt(j-1)) ? matchR : -misP;
+        var v0 = mPrev[j-1] + sub, v1 = ePrev[j-1] + sub, v2 = fPrev[j-1] + sub, dPred = 0;
+        var bestD = v0;
+        if(v2 > bestD){ bestD = v2; dPred = 2; }
+        if(v1 > bestD){ bestD = v1; dPred = 1; }
+        mCur[j] = bestD;
+
+        // E(i,j)：水平移动（样品碱基对空位）
+        var eOpen = mCur[j-1] - go, eExt = eCur[j-1] - ge, ePred;
+        if(eOpen >= eExt){ eCur[j] = eOpen; ePred = 0; } else { eCur[j] = eExt; ePred = 1; }
+        // F(i,j)：垂直移动（参考碱基对空位）
+        var fOpen = mPrev[j] - go, fExt = fPrev[j] - ge, fPred;
+        if(fOpen >= fExt){ fCur[j] = fOpen; fPred = 0; } else { fCur[j] = fExt; fPred = 1; }
+
+        var cell = 3*((i-1)*n + (j-1));
+        setNib(cell,     dPred);
+        setNib(cell + 1, ePred);
+        setNib(cell + 2, fPred);
+      }
+      var t1=mPrev; mPrev=mCur; mCur=t1;
+      var t2=ePrev; ePrev=eCur; eCur=t2;
+      var t3=fPrev; fPrev=fCur; fCur=t3;
+    }
+
+    var scoreM = mPrev[n], scoreE = ePrev[n], scoreF = fPrev[n];
+    var state = 'M', bestScore = scoreM;
+    if(scoreF > bestScore){ state='F'; bestScore=scoreF; }
+    if(scoreE > bestScore){ state='E'; bestScore=scoreE; }
+
+    // traceback，倒序收集列类型：1=对角 2=参考对空位(F) 3=空位对样品(E)
+    var ii = m, jj = n, codes = [];
+    while(ii > 0 || jj > 0){
+      if(state === 'M'){
+        if(ii > 0 && jj > 0){
+          var pr = getNib(3*((ii-1)*n+(jj-1)));
+          codes.push(1); ii--; jj--;
+          state = pr===0 ? 'M' : (pr===1 ? 'E' : 'F'); // 对角前驱所在状态
+        }else if(jj > 0){
+          state = 'E';   // 顶边：交给 E 沿边界回溯
+        }else{
+          state = 'F';   // 左边：交给 F 沿边界回溯
+        }
+      }else if(state === 'E'){
+        var pe = (ii > 0) ? getNib(3*((ii-1)*n+(jj-1)) + 1) : (jj===1 ? 0 : 1);
+        codes.push(3); jj--;
+        state = pe===0 ? 'M' : 'E';
+      }else{ // F
+        var pf = (jj > 0) ? getNib(3*((ii-1)*n+(jj-1)) + 2) : (ii===1 ? 0 : 1);
+        codes.push(2); ii--;
+        state = pf===0 ? 'M' : 'F';
+      }
+    }
+    codes.reverse();
+
+    var refAln = '', smpAln = '', mid = '';
+    var ri = 0, si = 0, matches = 0, exact = 0, degen = 0, mismatches = 0, insCols = 0, delCols = 0;
+    var diffs = [];
+    var gapRun = null;
+    function closeGapRun(){
+      if(gapRun){
+        gapRun.refPosEnd = ri; gapRun.smpPosEnd = si;
+        diffs.push(gapRun); gapRun = null;
+      }
+    }
+    for(var c=0;c<codes.length;c++){
+      var code = codes[c];
+      if(code === 1){
+        closeGapRun();
+        var rb = ref.charAt(ri), sb = smp.charAt(si);
+        refAln += rb; smpAln += sb;
+        if(compatible(rb, sb)){
+          matches++;
+          if(isExact(rb,sb)){ exact++; mid += '|'; }
+          else { degen++; mid += ':'; }
+        }else{
+          mismatches++; mid += '×';
+          diffs.push({type:'mismatch', refPos:ri+1, smpPos:si+1, refBase:rb, smpBase:sb});
+        }
+        ri++; si++;
+      }else if(code === 2){ // 参考有、样品缺
+        refAln += ref.charAt(ri); smpAln += '-'; mid += ' ';
+        delCols++;
+        if(!gapRun || gapRun.type !== 'del'){
+          closeGapRun();
+          gapRun = {type:'del', refPos:ri+1, smpPos:si===0?0:si, refBases:'', smpBases:''};
+        }
+        gapRun.refBases += ref.charAt(ri);
+        ri++;
+      }else{ // 样品插入
+        refAln += '-'; smpAln += smp.charAt(si); mid += ' ';
+        insCols++;
+        if(!gapRun || gapRun.type !== 'ins'){
+          closeGapRun();
+          gapRun = {type:'ins', refPos:ri===0?0:ri, smpPos:si+1, refBases:'', smpBases:''};
+        }
+        gapRun.smpBases += smp.charAt(si);
+        si++;
+      }
+    }
+    closeGapRun();
+    diffs.sort(function(a,b){
+      var pa = a.refPos && a.refPos>0 ? a.refPos : (a.smpPos||0);
+      var pb = b.refPos && b.refPos>0 ? b.refPos : (b.smpPos||0);
+      return pa-pb;
+    });
+
+    var diagCols = matches + mismatches;
+    if(diagCols === 0) throw new Error('两序列没有可比对的区域（比对列全部为空位），请检查序列或链向设置。');
+    var identity = matches / diagCols;
+
+    return {
+      score: bestScore,
+      refAln: refAln, smpAln: smpAln, mid: mid,
+      stats: {
+        refLen: m, smpLen: n, alnLen: codes.length,
+        diagCols: diagCols, matches: matches, exact: exact, degen: degen,
+        mismatches: mismatches, insCols: insCols, delCols: delCols,
+        identity: identity, diffCount: diffs.length
+      },
+      diffs: diffs
+    };
+  }
+
+  // 翻译一个（可能含简并碱基的）密码子：所有可能密码子同一氨基酸才确定，否则 X，含空位/不足 → null
+  function translateCodon(codon){
+    if(!codon || codon.length !== 3 || codon.indexOf('-') >= 0) return null;
+    var sets = [];
+    for(var i=0;i<3;i++){
+      var s = IUPAC[codon.charAt(i)];
+      if(!s) return null;
+      sets.push(s);
+    }
+    var aa = null;
+    for(var a=0;a<sets[0].length;a++)
+      for(var b=0;b<sets[1].length;b++)
+        for(var c=0;c<sets[2].length;c++){
+          var v = CODON[sets[0][a]+sets[1][b]+sets[2][c]];
+          if(v === undefined) return null;
+          if(aa === null) aa = v;
+          else if(aa !== v) return 'X';
+        }
+    return aa;
+  }
+
+  // 以参考坐标为锚，按读框把连续 3 个参考碱基划为一个密码子窗口。
+  // 先从比对重建：refAt[i] / smpAt[i]（第 i 个参考碱基所对的样本碱基或 '-'），
+  // 以及 insBefore[j]：紧接在第 j 个参考碱基之前（边界 j，j=m 即末尾）的样本插入串。
+  function buildCodonGroups(refAln, smpAln, frame){
+    var m = 0, col;
+    for(col=0; col<refAln.length; col++) if(refAln.charAt(col) !== '-') m++;
+    var refAt = new Array(m), smpAt = new Array(m);
+    var insBefore = new Array(m+1);
+    for(var z=0; z<=m; z++) insBefore[z] = '';
+    var ri = 0;
+    for(col=0; col<refAln.length; col++){
+      var r = refAln.charAt(col), s = smpAln.charAt(col);
+      if(r === '-'){ insBefore[ri] += s; }       // 边界 ri 处的样本插入
+      else { refAt[ri] = r; smpAt[ri] = s; ri++; }
+    }
+    // 前缀：边界 a 之前累计的插入碱基数、参考位 a 之前累计的样本缺失数
+    var prefIns = new Array(m+1), prefDel = new Array(m+1);
+    prefIns[0] = 0; prefDel[0] = 0;
+    for(var q=0; q<m; q++){
+      prefIns[q+1] = prefIns[q] + insBefore[q].length;
+      prefDel[q+1] = prefDel[q] + (smpAt[q] === '-' ? 1 : 0);
+    }
+    function mod3(x){ return ((x % 3) + 3) % 3; }
+
+    var groups = [];
+    for(var a = frame; a < m; a += 3){
+      var b = Math.min(a + 2, m - 1);
+      var refCodon = '', smpCodon = '', del = 0;
+      for(var i=a; i<=b; i++){
+        refCodon += refAt[i];
+        if(smpAt[i] === '-'){ smpCodon += '-'; del++; }
+        else smpCodon += smpAt[i];
+      }
+      // 归属于本窗口的插入：起始边界 a 及窗口内部边界 a+1、a+2（末尾边界 m 并入最后一个窗口）
+      var ins = insBefore[a];
+      [a+1, a+2].forEach(function(bd){ if(bd <= m) ins += insBefore[bd]; });
+      var phaseBefore = prefIns[a] - prefDel[a];
+      var g = {
+        refPos: a + 1, smpPos: 0,
+        refCodon: refCodon, smpCodon: smpCodon, insBases: ins, refGaps: del,
+        shifted: mod3(phaseBefore) !== 0
+      };
+      while(g.smpCodon.length < 3) g.smpCodon += '-';
+      g.refAA = translateCodon(g.refCodon);
+      g.smpAA = translateCodon(g.smpCodon);
+      g.type = classify(g);
+      groups.push(g);
+    }
+    return groups;
+  }
+
+  function classify(g){
+    if(g.shifted) return 'frameshift';
+    var indel = g.insBases.length > 0 || g.refGaps > 0;
+    var full = g.refCodon.length === 3;
+    if(indel){
+      var delta = g.insBases.length - g.refGaps;
+      if(delta % 3 !== 0) return 'frameshift';
+      return 'inframe';
+    }
+    if(!full) return 'partial';
+    if(g.refCodon === g.smpCodon) return 'syn';
+    var ra = g.refAA, sa = g.smpAA;
+    if(ra === '*' && sa === '*') return 'syn';
+    if(ra === '*' && sa !== '*') return 'missense';   // 终止密码子丢失
+    if(sa === '*') return 'nonsense';
+    if(ra === sa) return 'syn';
+    return 'missense';
+  }
+
+  function analyzeFrame(refAln, smpAln, frame){
+    var groups = buildCodonGroups(refAln, smpAln, frame);
+    var counts = {syn:0, missense:0, nonsense:0, frameshift:0, inframe:0, partial:0, refStops:0, smpStops:0};
+    groups.forEach(function(g){
+      counts[g.type]++;
+      if(g.refAA === '*') counts.refStops++;
+      if(g.smpAA === '*') counts.smpStops++;
+    });
+    return {frame:frame, groups:groups, counts:counts};
+  }
+
+  self.onmessage = function(e){
+    var d = e.data;
+    try{
+      var ref = parseFasta(d.refText, '参考序列');
+      var smpRaw = parseFasta(d.smpText, '样本序列');
+      var p = d.params;
+      ['match','mismatch','gapOpen','gapExt'].forEach(function(k){
+        if(typeof p[k] !== 'number' || !isFinite(p[k]) || p[k] < 0 || p[k] > 100 || Math.floor(p[k]) !== p[k]){
+          throw new Error('罚分参数 “' + k + '” 必须是 0–100 的整数。');
+        }
+      });
+      var smp = d.strand === 'rc' ? reverseComplement(smpRaw) : smpRaw;
+      var res = alignGotoh(ref, smp, p);
+      var frames = [0,1,2].map(function(f){ return analyzeFrame(res.refAln, res.smpAln, f); });
+      self.postMessage({
+        ok:true,
+        strand:d.strand,
+        refSeq:ref, smpRaw:smpRaw, smpAnalyzed:smp,
+        score:res.score, stats:res.stats, diffs:res.diffs,
+        refAln:res.refAln, smpAln:res.smpAln, mid:res.mid,
+        frames:frames
+      });
+    }catch(err){
+      self.postMessage({ok:false, error: String(err && err.message || err)});
+    }
+  };
+})();
+/* === WORKER-END === */
+</script>
+
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+  var refs = {
+    input:$('refInput'), smp:$('smpInput'), strand:$('strand'),
+    match:$('matchSc'), mismatch:$('mismatchSc'), gapOpen:$('gapOpen'), gapExt:$('gapExt'),
+    refLen:$('refLen'), smpLen:$('smpLen'), error:$('errorBox'), status:$('status'),
+    results:$('results'), demo:$('demoBtn'), clear:$('clearBtn')
+  };
+
+  var WORKER_SRC = $('worker-src').textContent;
+  var timer = null, worker = null, runId = 0;
+
+  function esc(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+  function pct(x){ return (x*100).toFixed(2) + '%'; }
+
+  var TYPE_LABEL = {
+    syn:{cls:'syn',zh:'同义'}, missense:{cls:'missense',zh:'错义'},
+    nonsense:{cls:'nonsense',zh:'无义'}, frameshift:{cls:'frameshift',zh:'移码'},
+    inframe:{cls:'inframe',zh:'框内插入/缺失'}, partial:{cls:'partial',zh:'不完整密码子'}
+  };
+
+  function rawLen(t){
+    var s = (t||'').split(/\r\n|\n|\r/)
+      .filter(function(l){ return l.trim().charAt(0) !== '>'; })
+      .join('').toUpperCase().replace(/[^ACGTURYSWKMBDHVN]/g,'');
+    return s.length;
+  }
+  function refreshCounters(){
+    refs.refLen.textContent = rawLen(refs.input.value) + ' nt';
+    refs.smpLen.textContent = rawLen(refs.smp.value) + ' nt';
+  }
+
+  function showError(msg){
+    refs.error.style.display = 'block';
+    refs.error.textContent = '⚠ ' + msg;
+  }
+  function clearError(){ refs.error.style.display = 'none'; refs.error.textContent = ''; }
+
+  // 任何输入变化：立即清掉旧结果，再防抖重算
+  function invalidate(){
+    clearError();
+    runId++;
+    if(worker){ try{ worker.terminate(); }catch(_){} worker = null; }
+    clearTimeout(timer);
+    refs.results.innerHTML = '<div class="placeholder">输入已变更，正在重新计算…</div>';
+    refs.status.textContent = '';
+    refreshCounters();
+    timer = setTimeout(run, 250);
+  }
+
+  function run(){
+    var myRun = ++runId;
+    var params = {
+      match: Number(refs.match.value), mismatch: Number(refs.mismatch.value),
+      gapOpen: Number(refs.gapOpen.value), gapExt: Number(refs.gapExt.value)
+    };
+    if(!refs.input.value.trim() || !refs.smp.value.trim()){
+      refs.results.innerHTML = '<div class="placeholder">粘贴参考序列与样本序列后自动开始比对与变异注释。</div>';
+      return;
+    }
+    refs.status.innerHTML = '<span class="spin"></span>后台计算中（不阻塞页面）…';
+    var t0 = performance.now();
+    try{
+      var blob = new Blob([WORKER_SRC], {type:'text/javascript'});
+      worker = new Worker(URL.createObjectURL(blob));
+    }catch(err){
+      refs.status.textContent = '';
+      showError('无法启动计算线程：' + err.message);
+      return;
+    }
+    worker.onmessage = function(e){
+      if(myRun !== runId) return; // 丢弃过期结果
+      worker = null;
+      refs.status.textContent = '';
+      var d = e.data;
+      if(!d.ok){ showError(d.error); refs.results.innerHTML='<div class="placeholder">本次输入无法计算，请按上方提示修正。</div>'; return; }
+      var ms = Math.round(performance.now() - t0);
+      render(d, ms);
+    };
+    worker.onerror = function(err){
+      if(myRun !== runId) return;
+      worker = null;
+      refs.status.textContent = '';
+      showError('计算线程错误：' + (err.message || '未知错误'));
+    };
+    worker.postMessage({
+      refText: refs.input.value, smpText: refs.smp.value,
+      strand: refs.strand.value, params: params
+    });
+  }
+
+  // ---------- 渲染 ----------
+  function rowSpans(str, kind){
+    var out = '', curCls = null, buf = '';
+    function clsFor(ch){
+      if(kind === 'mid'){
+        if(ch === '|') return 'm-match';
+        if(ch === ':') return 'm-degen';
+        if(ch === '×') return 'm-mismatch';
+        return null;
+      }
+      if(ch === '-') return 'm-gap';
+      return null;
+    }
+    function flush(){ if(buf !== ''){ out += '<span class="'+curCls+'">'+esc(buf)+'</span>'; buf=''; } }
+    for(var i=0;i<str.length;i++){
+      var c = str.charAt(i), cl = clsFor(c);
+      if(cl !== curCls){ flush(); curCls = cl; }
+      buf += c;
+    }
+    flush();
+    return out;
+  }
+
+  function renderAlignment(d){
+    var W = 60, html = '';
+    for(var off=0; off<d.refAln.length; off+=W){
+      var r = d.refAln.substr(off,W), m = d.mid.substr(off,W), s = d.smpAln.substr(off,W);
+      var b1 = off+1, b2 = Math.min(off+W, d.refAln.length);
+      html += '<pre class="aln"><span class="ruler">比对列 '+b1+'–'+b2+'</span>\n'
+        + '<span class="lbl">参考</span>'+rowSpans(r,'seq')+'\n'
+        + '<span class="lbl"></span>'+rowSpans(m,'mid')+'\n'
+        + '<span class="lbl">样本</span>'+rowSpans(s,'seq')+'</pre>';
+    }
+    return html;
+  }
+
+  function renderStats(d){
+    var st = d.stats;
+    var idCls = st.identity >= 0.95 ? 'good' : (st.identity < 0.7 ? 'bad' : '');
+    var smpInfo = d.strand === 'rc'
+      ? '样本分析链长度 '+st.smpLen+' nt（已反向互补；原始 '+d.smpRaw.length+' nt）'
+      : '样本长度 '+st.smpLen+' nt';
+    return '<div class="stats">'
+      + stat('比对得分', d.score, '')
+      + stat('一致率', pct(st.identity), idCls)
+      + stat('匹配列', st.matches, 'good')
+      + stat('错配列', st.mismatches, st.mismatches?'bad':'')
+      + stat('插入列(样品+)', st.insCols, st.insCols?'':'')
+      + stat('缺失列(样品−)', st.delCols, st.delCols?'bad':'')
+      + stat('比对总列数', st.alnLen, '')
+      + stat('参考长度', st.refLen, '')
+      + '</div><p class="legend">一致率 = 可配对列中兼容碱基列占比；“|” 完全匹配，“:” 简并兼容（如 R/A），“×” 错配，“-” 空位。<br>'
+      + esc(smpInfo) + '。共标注差异位点/区段 ' + st.diffCount + ' 个。</p>';
+  }
+  function stat(k,v,cls){
+    return '<div class="stat"><div class="k">'+k+'</div><div class="v '+cls+'">'+v+'</div></div>';
+  }
+
+  function renderDiffs(d){
+    if(!d.diffs.length) return '<p class="legend">无差异位点。</p>';
+    var CAP = 500, rows = d.diffs.slice(0,CAP).map(function(x){
+      if(x.type === 'mismatch'){
+        var fwd = d.strand==='rc' ? (d.smpRaw.length - x.smpPos + 1) : '—';
+        return '<tr><td>'+x.refPos+'</td><td>'+x.smpPos+'</td><td>'+fwd+'</td>'
+          + '<td><span class="tag t-missense">错配</span></td>'
+          + '<td class="mono">'+x.refBase+'</td><td class="mono">'+x.smpBase+'</td></tr>';
+      }
+      var isIns = x.type==='ins';
+      var rp = isIns ? (x.refPos || '边界前') : (x.refPos + '–' + (x.refPos + x.refBases.length - 1));
+      var sp = isIns ? (x.smpPos + '–' + (x.smpPos + x.smpBases.length - 1)) : (x.smpPos || '边界');
+      var fwd = d.strand==='rc' ? (isIns ? (d.smpRaw.length - (x.smpPos + x.smpBases.length -1) +1)+'–'+(d.smpRaw.length - x.smpPos +1) : '—') : '—';
+      return '<tr><td>'+rp+'</td><td>'+sp+'</td><td>'+fwd+'</td>'
+        + '<td><span class="tag '+(isIns?'t-inframe':'t-frameshift')+'">'+(isIns?'插入':'缺失')+'</span></td>'
+        + '<td class="mono">'+(isIns?'—':esc(x.refBases))+'</td>'
+        + '<td class="mono">'+(isIns?esc(x.smpBases):'—')+'</td></tr>';
+    }).join('');
+    return (d.diffs.length>CAP?'<p class="sec-note">差异超过 '+CAP+' 条，仅显示前 '+CAP+' 条；统计基于全部位点。</p>':'')
+      + '<div class="tbl-wrap"><table><thead><tr><th>参考位置</th><th>样本位置(分析链)</th><th>样本正链位置</th><th>类型</th><th>参考</th><th>样本</th></tr></thead>'
+      + '<tbody>'+rows+'</tbody></table></div>';
+  }
+
+  function aaTxt(aa){ return aa === null ? '–' : (aa === '*' ? '∗' : aa); }
+
+  function renderFrames(d){
+    var CHIP_CAP = 300, ROW_CAP = 300;
+    return d.frames.map(function(fr){
+      var c = fr.counts;
+      var badges = [
+        ['t-syn','同义 '+c.syn],['t-missense','错义 '+c.missense],['t-nonsense','无义 '+c.nonsense],
+        ['t-frameshift','移码 '+c.frameshift],['t-inframe','框内Indel '+c.inframe],
+        ['t-partial','不完整 '+c.partial]
+      ].map(function(b){return '<span class="tag '+b[0]+'">'+b[1]+'</span>';}).join('');
+
+      var chips = fr.groups.slice(0,CHIP_CAP).map(function(g,idx){
+        var meta = TYPE_LABEL[g.type];
+        var stop = (g.refAA==='*' || g.smpAA==='*') ? ' stop' : '';
+        var ins = g.insBases ? '<span class="m-gap">+'+esc(g.insBases)+'</span>' : '';
+        var smpAA = g.smpAA==='*' ? '<span class="mut">∗</span>' : '<span class="aa">'+esc(aaTxt(g.smpAA))+'</span>';
+        var refAA = g.refAA==='*' ? '<span class="mut">∗</span>' : '<span class="aa">'+esc(aaTxt(g.refAA))+'</span>';
+        return '<span class="chip '+meta.cls+stop+'" title="参考位 '+g.refPos+' · '+meta.zh+'">'
+          + esc(g.refCodon)+'('+refAA+') → '
+          + esc(g.smpCodon.replace(/-/g,'–'))+ins+'('+smpAA+')</span>';
+      }).join('');
+
+      var mutRows = fr.groups.map(function(g){
+        return {g:g};
+      }).filter(function(o){
+        return ['missense','nonsense','frameshift','inframe'].indexOf(o.g.type) >= 0;
+      }).slice(0,ROW_CAP);
+      var rows = mutRows.map(function(o){
+        var g = o.g, meta = TYPE_LABEL[g.type];
+        var change, detail;
+        if(g.type==='inframe' || g.type==='frameshift'){
+          change = g.insBases ? '插入 +'+esc(g.insBases) : '缺失 −'+esc(g.refCodon.replace(/-/g,''));
+          detail = esc(g.refCodon)+' → '+esc(g.smpCodon)+(g.insBases?' +'+esc(g.insBases):'');
+        }else{
+          detail = esc(g.refCodon)+' → '+esc(g.smpCodon);
+          change = esc(aaTxt(g.refAA))+' → '+(g.smpAA==='*'?'<span class="mut">∗ 终止</span>':esc(aaTxt(g.smpAA)));
+        }
+        return '<tr><td>'+g.refPos+'</td><td><span class="tag t-'+g.type+'">'+meta.zh+'</span></td>'
+          + '<td class="mono">'+detail+'</td><td class="mono">'+change+'</td></tr>';
+      }).join('');
+      var table = rows ? '<div class="tbl-wrap"><table><thead><tr><th>参考起始位</th><th>类型</th><th>密码子变化</th><th>氨基酸 / 效应</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        : '<p class="legend">该读框未发现错义 / 无义 / 移码 / 框内 Indel。</p>';
+
+      return '<details class="frame"'+(fr.frame===0?' open':'')+'><summary>读框 +'
+        +(fr.frame+1)+'（从参考第 '+(fr.frame+1)+' 位起每 3 碱基）　<span class="frame-badges">'+badges
+        +' <span class="tag t-partial">参考终止密码子 '+c.refStops+' · 样品终止 '+c.smpStops+'</span></span></summary>'
+        + '<div class="chips">'+chips+'</div>'
+        + (fr.groups.length>CHIP_CAP?'<p class="sec-note">密码子超过 '+CHIP_CAP+' 个，仅绘制前 '+CHIP_CAP+' 个；统计表覆盖全部。</p>':'')
+        + table + '</details>';
+    }).join('');
+  }
+
+  function render(d, ms){
+    refs.status.textContent = '计算完成，耗时 ' + ms + ' ms（后台线程）。';
+    var html = ''
+      + '<section class="card"><h2>2. 全局比对与一致率</h2>' + renderStats(d) + renderAlignment(d) + '</section>'
+      + '<section class="card"><h2>3. 差异位置</h2>' + renderDiffs(d) + '</section>'
+      + '<section class="card"><h2>4. 编码区三读框翻译与变异注释</h2>'
+      + '<p class="legend">标准密码子表；∗ 为终止密码子（红框标出）。分类：<span class="tag t-syn">同义</span> <span class="tag t-missense">错义</span> <span class="tag t-nonsense">无义</span> <span class="tag t-frameshift">移码</span> <span class="tag t-inframe">框内Indel</span>。移码判定基于插入/缺失导致的密码子相位，首个移位密码子及其后全部按移码标注。</p>'
+      + renderFrames(d) + '</section>';
+    refs.results.innerHTML = html;
+  }
+
+  // ---------- 事件 ----------
+  ['input','change'].forEach(function(ev){
+    refs.input.addEventListener(ev, invalidate);
+    refs.smp.addEventListener(ev, invalidate);
+    refs.strand.addEventListener(ev, invalidate);
+    refs.match.addEventListener(ev, invalidate);
+    refs.mismatch.addEventListener(ev, invalidate);
+    refs.gapOpen.addEventListener(ev, invalidate);
+    refs.gapExt.addEventListener(ev, invalidate);
+  });
+
+  refs.clear.addEventListener('click', function(){
+    refs.input.value=''; refs.smp.value='';
+    refs.strand.value='forward';
+    refs.match.value=2; refs.mismatch.value=2; refs.gapOpen.value=5; refs.gapExt.value=1;
+    invalidate();
+  });
+
+  refs.demo.addEventListener('click', function(){
+    // ATG CCC TTT GGG AAA TAA (M P F G K *)；样本：P→H 错义、F→F 同义、G→* 无义
+    refs.input.value = '>WT_CDS  M P F G K *\nATGCCCTTTGGGAAATAA';
+    refs.smp.value  = '>sample  M H F * K * （错义 / 同义 / 无义）\nATGCACTTCTGAAAATAA';
+    refs.strand.value='forward';
+    invalidate();
+  });
+
+  refreshCounters();
+  refs.results.innerHTML = '<div class="placeholder">粘贴参考序列与样本序列后自动开始比对与变异注释，或点击「载入示例」。</div>';
+})();
+</script>
+</body>
+</html>
